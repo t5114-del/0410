@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>霓虹城市：成語賽馬</title>
+  
+  <!-- 載入 Tailwind CSS (用於快速排版與樣式) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 載入 React 核心函式庫 -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- 載入 Babel (用於在瀏覽器端轉換 React JSX 語法) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      overflow: hidden; /* 防止滾動條 */
+    }
+    #root {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React 遊戲程式碼 -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // --- 成語題庫 ---
+    const IDIOM_DATABASE = [
+      { question: "形容人山人海，非常熱鬧。", answer: "摩肩接踵", options: ["門可羅雀", "孤注一擲", "井底之蛙"] },
+      { question: "比喻事情非常容易，毫不費力。", answer: "易如反掌", options: ["難如登天", "拔苗助長", "守株待兔"] },
+      { question: "指沒有根據，憑空捏造的話。", answer: "無稽之談", options: ["肺腑之言", "金玉良言", "逆耳忠言"] },
+      { question: "形容非常危險，隨時會發生災禍。", answer: "千鈞一髮", options: ["泰然處之", "安居樂業", "高枕無憂"] },
+      { question: "比喻做了多餘的事，反而不妙。", answer: "畫蛇添足", options: ["雪中送炭", "錦上添花", "亡羊補牢"] },
+      { question: "比喻顧此失彼，窮於應付。", answer: "捉襟見肘", options: ["綽綽有餘", "游刃有餘", "十全十美"] },
+      { question: "比喻眼光短淺，見識狹隘。", answer: "井底之蛙", options: ["見多識廣", "高瞻遠矚", "博古通今"] },
+      { question: "指不切實際的空想。", answer: "海市蜃樓", options: ["腳踏實地", "真憑實據", "鐵證如山"] },
+      { question: "形容事情錯綜複雜，難以理清。", answer: "千頭萬緒", options: ["一目了然", "井然有序", "條理分明"] },
+      { question: "比喻力量微小，無濟於事。", answer: "杯水車薪", options: ["綽綽有餘", "推波助瀾", "對症下藥"] },
+      { question: "形容彼此意見不合，爭執不休。", answer: "針鋒相對", options: ["同舟共濟", "一拍即合", "和睦相處"] },
+      { question: "指做事猶豫不決，缺乏果斷。", answer: "優柔寡斷", options: ["雷厲風行", "斬釘截鐵", "當機立斷"] },
+      { question: "比喻模仿別人不到家，反把原來會的也忘了。", answer: "邯鄲學步", options: ["標新立異", "獨樹一幟", "融會貫通"] },
+      { question: "形容事物完美無缺。", answer: "十全十美", options: ["千瘡百孔", "一無是處", "白璧微瑕"] },
+      { question: "比喻事物突然消失，不留痕跡。", answer: "煙消雲散", options: ["根深蒂固", "源遠流長", "歷久彌新"] },
+      { question: "比喻同類的人或事物相聚在一起。", answer: "物以類聚", options: ["分道揚鑣", "格格不入", "背道而馳"] },
+      { question: "形容非常生氣。", answer: "暴跳如雷", options: ["心平氣和", "喜笑顏開", "泰然自若"] },
+      { question: "比喻雖然經歷挫折，但仍不屈服。", answer: "百折不撓", options: ["一蹶不振", "半途而廢", "知難而退"] }
+    ];
+
+    // --- 工具函數 ---
+    const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
+
+    function CityHorseRaceGame() {
+      const [screen, setScreen] = useState('start'); // 'start', 'game', 'result'
+      
+      // 遊戲狀態
+      const [horses, setHorses] = useState({ player: 0, cpu1: 0, cpu2: 0, cpu3: 0 });
+      const [rankings, setRankings] = useState([]);
+      const [score, setScore] = useState(0);
+      const [stats, setStats] = useState({ correct: 0, wrong: 0 });
+      
+      // 題目狀態
+      const [currentQuestion, setCurrentQuestion] = useState(null);
+      const [currentOptions, setCurrentOptions] = useState([]);
+      const [timeLeft, setTimeLeft] = useState(15);
+      const [isAnswering, setIsAnswering] = useState(false);
+      const [feedback, setFeedback] = useState(null); // 'correct', 'wrong', 'timeout'
+      
+      const rankingsRef = useRef([]);
+      const gameActiveRef = useRef(false);
+
+      // --- 初始化與開始遊戲 ---
+      const startGame = () => {
+        setHorses({ player: 0, cpu1: 0, cpu2: 0, cpu3: 0 });
+        setRankings([]);
+        rankingsRef.current = [];
+        setScore(0);
+        setStats({ correct: 0, wrong: 0 });
+        gameActiveRef.current = true;
+        loadNextQuestion();
+        setScreen('game');
+      };
+
+      const loadNextQuestion = useCallback(() => {
+        const q = IDIOM_DATABASE[Math.floor(Math.random() * IDIOM_DATABASE.length)];
+        setCurrentQuestion(q);
+        const options = shuffleArray([q.answer, ...q.options]);
+        setCurrentOptions(options);
+        setTimeLeft(15);
+        setIsAnswering(false);
+        setFeedback(null);
+      }, []);
+
+      // --- 遊戲主迴圈 (馬匹移動) ---
+      useEffect(() => {
+        if (screen !== 'game') return;
+
+        const interval = setInterval(() => {
+          if (!gameActiveRef.current) return;
+
+          setHorses(prev => {
+            const next = { ...prev };
+            let updated = false;
+
+            // 電腦馬匹隨機前進 (大約 25-35秒跑完 100%)
+            // 每 50ms 跑 0.12 ~ 0.22% => 每秒跑 2.4% ~ 4.4%
+            ['cpu1', 'cpu2', 'cpu3'].forEach(cpu => {
+              if (next[cpu] < 100) {
+                next[cpu] = Math.min(100, next[cpu] + (0.12 + Math.random() * 0.1));
+                updated = true;
+              }
+            });
+
+            // 檢查到達終點
+            const currentRanks = [...rankingsRef.current];
+            Object.keys(next).forEach(key => {
+              if (next[key] >= 100 && !currentRanks.includes(key)) {
+                currentRanks.push(key);
+              }
+            });
+
+            if (currentRanks.length !== rankingsRef.current.length) {
+              rankingsRef.current = currentRanks;
+              setRankings(currentRanks);
+              
+              // 如果玩家抵達終點，或三匹電腦都抵達終點（玩家最後一名），則結束遊戲
+              if (currentRanks.includes('player') || currentRanks.length >= 4) {
+                gameActiveRef.current = false;
+                setTimeout(() => setScreen('result'), 1000); // 延遲1秒進結算，讓玩家看到到達終點
+              }
+            }
+
+            return updated ? next : prev;
+          });
+        }, 50);
+
+        return () => clearInterval(interval);
+      }, [screen]);
+
+      // --- 題目計時器 ---
+      useEffect(() => {
+        if (screen !== 'game' || !gameActiveRef.current || isAnswering) return;
+
+        const timer = setInterval(() => {
+          setTimeLeft(prev => {
+            if (prev <= 1) {
+              handleTimeout();
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        return () => clearInterval(timer);
+      }, [screen, isAnswering, currentQuestion]);
+
+      // --- 答題處理 ---
+      const handleAnswer = (selectedOption) => {
+        if (isAnswering || !gameActiveRef.current) return;
+        setIsAnswering(true);
+
+        const isCorrect = selectedOption === currentQuestion.answer;
+        
+        if (isCorrect) {
+          setFeedback('correct');
+          setStats(s => ({ ...s, correct: s.correct + 1 }));
+          setScore(s => s + 500 + timeLeft * 20); // 答題基礎分 + 剩餘時間獎勵
+          // 玩家前進 22% (約答對 5 題可到達終點)
+          setHorses(prev => {
+            const newPos = Math.min(100, prev.player + 22);
+            return { ...prev, player: newPos };
+          });
+        } else {
+          setFeedback('wrong');
+          setStats(s => ({ ...s, wrong: s.wrong + 1 }));
+        }
+
+        // 顯示回饋後換下一題
+        setTimeout(() => {
+          if (gameActiveRef.current) {
+            loadNextQuestion();
+          }
+        }, 1200);
+      };
+
+      const handleTimeout = () => {
+        setIsAnswering(true);
+        setFeedback('timeout');
+        setStats(s => ({ ...s, wrong: s.wrong + 1 }));
+        setTimeout(() => {
+          if (gameActiveRef.current) {
+            loadNextQuestion();
+          }
+        }, 1500);
+      };
+
+      // --- 畫面元件 ---
+      const renderStartScreen = () => (
+        <div className="flex flex-col items-center justify-center h-full w-full bg-slate-900 text-white p-6 relative overflow-hidden">
+          {/* 城市背景裝飾 */}
+          <div className="absolute bottom-0 w-full h-64 opacity-30 flex items-end justify-center pointer-events-none">
+            <div className="w-16 h-48 bg-cyan-900 mx-1 border-t-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]"></div>
+            <div className="w-24 h-64 bg-indigo-900 mx-1 border-t-2 border-indigo-400 shadow-[0_0_15px_rgba(129,140,248,0.5)]"></div>
+            <div className="w-20 h-32 bg-purple-900 mx-1 border-t-2 border-purple-400 shadow-[0_0_15px_rgba(192,132,252,0.5)]"></div>
+            <div className="w-28 h-56 bg-cyan-900 mx-1 border-t-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]"></div>
+            <div className="w-16 h-40 bg-indigo-900 mx-1 border-t-2 border-indigo-400 shadow-[0_0_15px_rgba(129,140,248,0.5)]"></div>
+          </div>
+
+          <div className="z-10 text-center flex flex-col items-center backdrop-blur-sm bg-slate-900/60 p-8 rounded-2xl border border-cyan-500/30 shadow-[0_0_30px_rgba(34,211,238,0.2)]">
+            <h1 className="text-5xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 filter drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]">
+              霓虹城市
+            </h1>
+            <h2 className="text-4xl font-bold mb-8 text-white tracking-widest">
+              成語賽馬
+            </h2>
+            
+            <div className="mb-8 text-left space-y-3 text-slate-300 bg-slate-800/80 p-6 rounded-xl border border-slate-600">
+              <p className="flex items-center"><span className="text-cyan-400 mr-2">🎮</span> 答對成語問題，讓你的馬匹加速前進！</p>
+              <p className="flex items-center"><span className="text-cyan-400 mr-2">⏱️</span> 每題限時 15 秒，越快答對分數越高。</p>
+              <p className="flex items-center"><span className="text-cyan-400 mr-2">🏁</span> 與三匹電腦馬競爭，搶先抵達終點！</p>
+            </div>
+
+            <button 
+              onClick={startGame}
+              className="px-10 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-full text-xl font-bold hover:scale-105 hover:shadow-[0_0_20px_rgba(34,211,238,0.6)] transition-all duration-300 active:scale-95"
+            >
+              開始比賽
+            </button>
+          </div>
+        </div>
+      );
+
+      const renderGameScreen = () => (
+        <div className="flex flex-col h-full w-full bg-slate-900 text-white">
+          {/* 上半部：賽道區域 (佔據螢幕約 55%) */}
+          <div className="flex-grow flex flex-col relative overflow-hidden bg-gradient-to-b from-indigo-950 to-slate-900 border-b-4 border-cyan-500/50 shadow-[0_4px_20px_rgba(34,211,238,0.2)]">
+            
+            {/* 城市天際線背景 */}
+            <div className="absolute top-0 w-full h-1/2 opacity-20 flex items-end pointer-events-none">
+               {[...Array(15)].map((_, i) => (
+                 <div key={i} className="bg-cyan-900 border-t border-cyan-400/50 mx-px" style={{ width: `${Math.random() * 8 + 4}%`, height: `${Math.random() * 80 + 20}%` }}></div>
+               ))}
+            </div>
+
+            {/* 終點線標記 */}
+            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-r from-transparent to-white/10 z-0 flex flex-col border-l-2 border-yellow-400 shadow-[-5px_0_15px_rgba(250,204,21,0.3)]">
+              {[...Array(20)].map((_, i) => (
+                <div key={i} className={`flex-1 ${i % 2 === 0 ? 'bg-white/80' : 'bg-black/80'}`}></div>
+              ))}
+            </div>
+
+            {/* 賽道 */}
+            <div className="flex-1 flex flex-col justify-around py-4 z-10">
+              <HorseTrack name="玩家" position={horses.player} color="cyan" isPlayer={true} />
+              <HorseTrack name="CPU-1" position={horses.cpu1} color="red" />
+              <HorseTrack name="CPU-2" position={horses.cpu2} color="green" />
+              <HorseTrack name="CPU-3" position={horses.cpu3} color="purple" />
+            </div>
+          </div>
+
+          {/* 下半部：問答區域 (佔據螢幕約 45%) */}
+          <div className="h-[45%] bg-slate-800 p-4 sm:p-6 flex flex-col items-center">
+            {/* 計時器條 */}
+            <div className="w-full max-w-3xl h-3 bg-slate-700 rounded-full mb-6 overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-1000 ease-linear ${timeLeft > 5 ? 'bg-cyan-400' : 'bg-red-500'}`}
+                style={{ width: `${(timeLeft / 15) * 100}%` }}
+              />
+            </div>
+
+            {/* 題目與回饋 */}
+            <div className="flex-1 flex flex-col items-center justify-center w-full max-w-3xl">
+              <div className="relative w-full text-center mb-8">
+                <h3 className="text-2xl sm:text-3xl font-bold min-h-[4rem] flex items-center justify-center text-slate-100">
+                  {currentQuestion?.question}
+                </h3>
+                
+                {/* 答題回饋提示 */}
+                {feedback && (
+                  <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-6xl font-black rounded-xl p-4 animate-bounce z-20 backdrop-blur-md bg-black/40
+                    ${feedback === 'correct' ? 'text-green-400 shadow-[0_0_30px_rgba(74,222,128,0.5)] border border-green-400/50' : 'text-red-500 shadow-[0_0_30px_rgba(248,113,113,0.5)] border border-red-500/50'}`}>
+                    {feedback === 'correct' ? '✔️ 答對了！' : feedback === 'timeout' ? '⏰ 時間到！' : '❌ 答錯了！'}
+                  </div>
+                )}
+              </div>
+
+              {/* 選項按鈕 */}
+              <div className="grid grid-cols-2 gap-4 w-full">
+                {currentOptions.map((opt, idx) => {
+                  // 決定按鈕顏色狀態
+                  let btnClass = "bg-slate-700 hover:bg-slate-600 border-slate-500 text-white";
+                  if (isAnswering) {
+                    if (opt === currentQuestion.answer) {
+                      btnClass = "bg-green-600/80 border-green-400 shadow-[0_0_15px_rgba(74,222,128,0.6)] text-white"; // 正確答案
+                    } else if (feedback === 'wrong' || feedback === 'timeout') {
+                      btnClass = "bg-slate-800 border-slate-700 text-slate-500 opacity-50"; // 非正確的選項變暗
+                    }
+                  }
+
+                  return (
+                    <button
+                      key={idx}
+                      disabled={isAnswering}
+                      onClick={() => handleAnswer(opt)}
+                      className={`py-4 sm:py-5 px-4 rounded-xl border-2 text-xl sm:text-2xl font-bold transition-all duration-200 
+                        ${!isAnswering && 'hover:-translate-y-1 hover:shadow-lg'} ${btnClass}`}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+
+      const renderResultScreen = () => {
+        const playerRank = rankings.indexOf('player') + 1 || 4; // 如果沒在陣列裡代表最後一名
+        
+        // 名次稱號與顏色
+        const rankData = {
+          1: { text: "🏆 冠軍 (1st)", color: "text-yellow-400", shadow: "shadow-[0_0_30px_rgba(250,204,21,0.6)]" },
+          2: { text: "🥈 亞軍 (2nd)", color: "text-slate-300", shadow: "shadow-[0_0_20px_rgba(203,213,225,0.4)]" },
+          3: { text: "🥉 季軍 (3rd)", color: "text-amber-600", shadow: "shadow-[0_0_20px_rgba(217,119,6,0.4)]" },
+          4: { text: "😭 殿軍 (4th)", color: "text-slate-500", shadow: "" },
+        };
+
+        return (
+          <div className="flex flex-col items-center justify-center h-full w-full bg-slate-900 text-white p-6">
+            <div className={`backdrop-blur-md bg-slate-800/90 border border-slate-600 rounded-3xl p-8 sm:p-12 w-full max-w-xl flex flex-col items-center ${rankData[playerRank].shadow}`}>
+              <h2 className="text-3xl text-cyan-400 font-bold mb-2 tracking-widest">比賽結束</h2>
+              
+              <div className={`text-5xl sm:text-6xl font-black mb-8 ${rankData[playerRank].color}`}>
+                {rankData[playerRank].text}
+              </div>
+
+              <div className="w-full bg-slate-900/80 rounded-xl p-6 mb-8 border border-slate-700">
+                <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-700">
+                  <span className="text-xl text-slate-400">總得分</span>
+                  <span className="text-4xl font-bold text-cyan-400">{score}</span>
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-lg text-slate-400">答對題數</span>
+                  <span className="text-xl font-bold text-green-400">{stats.correct} 題</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-lg text-slate-400">答錯/逾時</span>
+                  <span className="text-xl font-bold text-red-400">{stats.wrong} 題</span>
+                </div>
+              </div>
+
+              <button 
+                onClick={startGame}
+                className="w-full py-4 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl text-xl font-bold hover:scale-[1.02] transition-all duration-300"
+              >
+                再玩一次
+              </button>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="h-screen w-full font-sans antialiased bg-black overflow-hidden selection:bg-cyan-500 selection:text-white">
+          {screen === 'start' && renderStartScreen()}
+          {screen === 'game' && renderGameScreen()}
+          {screen === 'result' && renderResultScreen()}
+        </div>
+      );
+    }
+
+    // --- 馬匹賽道子元件 ---
+    function HorseTrack({ name, position, color, isPlayer = false }) {
+      // 霓虹顏色設定
+      const colors = {
+        cyan: "text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)] border-cyan-500/30",
+        red: "text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)] border-red-500/30",
+        green: "text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)] border-green-500/30",
+        purple: "text-purple-400 drop-shadow-[0_0_10px_rgba(192,132,252,0.8)] border-purple-500/30",
+      };
+
+      const lineColors = {
+        cyan: "border-cyan-500/20",
+        red: "border-red-500/20",
+        green: "border-green-500/20",
+        purple: "border-purple-500/20",
+      }
+
+      // 確保圖標不會超出右邊界 (考慮圖標寬度)
+      const adjustedPosition = position >= 100 ? 100 : position;
+
+      return (
+        <div className="relative w-full h-16 sm:h-20 flex items-center group">
+          {/* 賽道分隔線 */}
+          <div className={`absolute w-full border-b-2 border-dashed ${lineColors[color]} top-1/2 transform -translate-y-1/2`}></div>
+          
+          {/* 名字標籤 */}
+          <div className="absolute left-2 z-10 text-xs sm:text-sm font-bold text-slate-400 bg-slate-900/80 px-2 py-1 rounded shadow">
+            {name}
+          </div>
+
+          {/* 馬匹本體 */}
+          <div 
+            className="absolute transition-all duration-100 ease-linear flex flex-col items-center"
+            style={{ 
+              left: `calc(${adjustedPosition}% - ${adjustedPosition === 100 ? '40px' : '40px'})`, // 微調位置確保對齊終點
+              zIndex: isPlayer ? 20 : 10
+            }}
+          >
+            {isPlayer && (
+              <div className="absolute -top-4 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-yellow-300 animate-bounce"></div>
+            )}
+            <div className={`text-4xl sm:text-5xl transform -scale-x-100 ${colors[color]} ${isPlayer ? 'scale-110' : ''}`}>
+              🐎
+            </div>
+            {/* 移動時的殘影/尾氣效果 */}
+            {position > 0 && position < 100 && (
+               <div className={`absolute top-1/2 right-full w-8 h-1 rounded-full bg-gradient-to-r from-transparent to-${color}-400/50 transform -translate-y-1/2`}></div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // --- 將 React 元件渲染到 HTML 畫面上 ---
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<CityHorseRaceGame />);
+  </script>
+</body>
+</html>
